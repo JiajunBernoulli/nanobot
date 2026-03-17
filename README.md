@@ -1159,6 +1159,92 @@ MCP tools are automatically discovered and registered on startup. The LLM can us
 | `tools.exec.pathAppend` | `""` | Extra directories to append to `PATH` when running shell commands (e.g. `/usr/sbin` for `ufw`). |
 | `channels.*.allowFrom` | `[]` (deny all) | Whitelist of user IDs. Empty denies all; use `["*"]` to allow everyone. |
 
+### Model Router Plugin
+
+nanobot supports custom model routing plugins that allow you to define your own logic for selecting models based on message content, context, or other factors.
+
+#### Creating a Custom Model Router
+
+1. **Create a model router file** (e.g., `my_model_router.py`):
+
+```python
+"""
+Custom model router that selects model based on message length.
+"""
+
+from nanobot.providers.model_router import ModelRouter
+from typing import Any, Dict
+
+
+class LengthBasedModelRouter(ModelRouter):
+    """
+    Model router that selects model based on the length of the user's message.
+    
+    - For messages with 100 characters or less: use model A
+    - For messages with more than 100 characters: use model B
+    """
+
+    def select_model(
+        self,
+        messages: list[Dict[str, Any]],
+        default_model: str,
+        **kwargs
+    ) -> str:
+        # Find the most recent user message
+        user_message = None
+        for msg in reversed(messages):
+            if msg.get('role') == 'user':
+                user_message = msg
+                break
+        
+        if not user_message:
+            return default_model
+        
+        # Calculate message length
+        content = user_message.get('content', '')
+        if isinstance(content, str):
+            message_length = len(content)
+        elif isinstance(content, list):
+            # Handle multimodal messages
+            message_length = sum(len(item.get('text', '')) for item in content if isinstance(item, dict))
+        else:
+            message_length = 0
+        
+        # Select model based on message length
+        if message_length <= 100:
+            # Use model A for short messages
+            return "gpt-4o-mini"
+        else:
+            # Use model B for long messages
+            return "gpt-4o"
+```
+
+2. **Configure the model router path** in `~/.nanobot/config.json`:
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "model": "anthropic/claude-opus-4-5",
+      "modelRouterPath": "/path/to/my_model_router.py"
+    }
+  }
+}
+```
+
+#### How It Works
+
+- The model router receives the full message history and the default model
+- It can analyze the message content, context, or any other factors to select the appropriate model
+- The selected model is then used for the current LLM call
+- If no custom logic applies, the default model is used
+
+#### Example Use Cases
+
+- **Message length**: Use different models for short vs. long messages
+- **Content type**: Use different models for code vs. natural language
+- **Time of day**: Use different models based on the time
+- **User role**: Use different models for different users
 
 ## 🧩 Multiple Instances
 

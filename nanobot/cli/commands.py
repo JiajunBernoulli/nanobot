@@ -487,6 +487,7 @@ def gateway(
         session_manager=session_manager,
         mcp_servers=config.tools.mcp_servers,
         channels_config=config.channels,
+        model_router_path=config.agents.defaults.model_router_path,
     )
 
     # Set cron callback (needs agent)
@@ -678,6 +679,7 @@ def agent(
         restrict_to_workspace=config.tools.restrict_to_workspace,
         mcp_servers=config.tools.mcp_servers,
         channels_config=config.channels,
+        model_router_path=config.agents.defaults.model_router_path,
     )
 
     # Shared reference for progress callbacks

@@ -27,6 +27,7 @@ from nanobot.agent.tools.web import WebFetchTool, WebSearchTool
 from nanobot.bus.events import InboundMessage, OutboundMessage
 from nanobot.bus.queue import MessageBus
 from nanobot.providers.base import LLMProvider
+from nanobot.providers.model_router import ModelRouter, load_model_router
 from nanobot.session.manager import Session, SessionManager
 
 if TYPE_CHECKING:
@@ -64,6 +65,7 @@ class AgentLoop:
         session_manager: SessionManager | None = None,
         mcp_servers: dict | None = None,
         channels_config: ChannelsConfig | None = None,
+        model_router_path: str | None = None,
     ):
         from nanobot.config.schema import ExecToolConfig, WebSearchConfig
 
@@ -79,6 +81,7 @@ class AgentLoop:
         self.exec_config = exec_config or ExecToolConfig()
         self.cron_service = cron_service
         self.restrict_to_workspace = restrict_to_workspace
+        self.model_router = load_model_router(model_router_path)
 
         self.context = ContextBuilder(workspace)
         self.sessions = session_manager or SessionManager(workspace)
@@ -196,10 +199,17 @@ class AgentLoop:
 
             tool_defs = self.tools.get_definitions()
 
+            # Use model router to select the appropriate model
+            selected_model = self.model_router.select_model(
+                messages=messages,
+                default_model=self.model,
+                tools=tool_defs,
+            )
+
             response = await self.provider.chat_with_retry(
                 messages=messages,
                 tools=tool_defs,
-                model=self.model,
+                model=selected_model,
             )
 
             if response.has_tool_calls:

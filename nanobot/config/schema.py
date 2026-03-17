@@ -42,6 +42,7 @@ class AgentDefaults(Base):
     # Deprecated compatibility field: accepted from old configs but ignored at runtime.
     memory_window: int | None = Field(default=None, exclude=True)
     reasoning_effort: str | None = None  # low / medium / high — enables LLM thinking mode
+    model_router_path: str | None = None  # Path to custom model router plugin
 
     @property
     def should_warn_deprecated_memory_window(self) -> bool:

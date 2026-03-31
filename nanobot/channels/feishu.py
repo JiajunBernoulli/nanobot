@@ -1,12 +1,8 @@
 """Feishu/Lark channel implementation using lark-oapi SDK with WebSocket long connection."""
 
 import asyncio
-import json
 import os
 import re
-import threading
-import time
-import uuid
 from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
@@ -254,7 +250,65 @@ class FeishuConfig(Base):
     streaming: bool = True
 
 
+# Progress update interval in seconds
+PROGRESS_INTERVAL = 1.0
+
 _STREAM_ELEMENT_ID = "streaming_md"
+
+
+class FileUploadProgress:
+    """Track file upload progress and send updates."""
+    
+    def __init__(self, channel, chat_id: str, file_path: str):
+        self.channel = channel
+        self.chat_id = chat_id
+        self.file_path = file_path
+        self.file_size = os.path.getsize(file_path)
+        self.bytes_read = 0
+        self.last_progress = -1
+        self.progress_task = None
+    
+    async def start(self) -> None:
+        """Start progress tracking."""
+        self.progress_task = asyncio.create_task(self._track_progress())
+    
+    async def _track_progress(self) -> None:
+        """Track progress and send updates."""
+        try:
+            while True:
+                # Get current bytes read
+                current_bytes = self.bytes_read
+                percent = (current_bytes / self.file_size) * 100
+                
+                if percent - self.last_progress >= 5:  # Update every 5%
+                    message = self._format_progress(current_bytes, self.file_size)
+                    await self.channel.send_message(self.chat_id, message)
+                    self.last_progress = percent
+                
+                if current_bytes >= self.file_size:
+                    break
+                
+                await asyncio.sleep(PROGRESS_INTERVAL)
+        except Exception as e:
+            logger.error(f"Progress tracking error: {e}")
+    
+    def update_bytes_read(self, bytes_read: int) -> None:
+        """Update bytes read count."""
+        self.bytes_read = bytes_read
+    
+    async def stop(self) -> None:
+        """Stop progress tracking."""
+        if self.progress_task:
+            self.progress_task.cancel()
+            try:
+                await self.progress_task
+            except asyncio.CancelledError:
+                pass
+    
+    def _format_progress(self, bytes_read: int, total: int) -> str:
+        """Format progress message with percentage."""
+        percent = (bytes_read / total) * 100
+        return f"上传中: {bytes_read/1024/1024:.1f}MB / {total/1024/1024:.1f}MB ({percent:.1f}%) ⏳ 请勿关闭窗口"
 
 
 @dataclass
@@ -726,13 +780,27 @@ class FeishuChannel(BaseChannel):
             logger.error("Error uploading image {}: {}", file_path, e)
             return None
 
-    def _upload_file_sync(self, file_path: str) -> str | None:
-        """Upload a file to Feishu and return the file_key."""
+    def _upload_file_sync(self, file_path: str, progress_callback=None) -> str | None:
+        """Upload a file to Feishu and return the file_key with optional progress tracking."""
         from lark_oapi.api.im.v1 import CreateFileRequest, CreateFileRequestBody
         ext = os.path.splitext(file_path)[1].lower()
         file_type = self._FILE_TYPE_MAP.get(ext, "stream")
         file_name = os.path.basename(file_path)
+        file_size = os.path.getsize(file_path)
+        bytes_read = 0
+        
         try:
+            # First pass: read file in chunks to support progress tracking
+            if progress_callback:
+                with open(file_path, "rb") as f:
+                    while True:
+                        chunk = f.read(1024 * 1024)  # 1MB chunks
+                        if not chunk:
+                            break
+                        bytes_read += len(chunk)
+                        progress_callback(bytes_read)
+            
+            # Second pass: perform actual upload
             with open(file_path, "rb") as f:
                 request = CreateFileRequest.builder() \
                     .request_body(
@@ -1137,29 +1205,45 @@ class FeishuChannel(BaseChannel):
                     logger.warning("Media file not found: {}", file_path)
                     continue
                 ext = os.path.splitext(file_path)[1].lower()
-                if ext in self._IMAGE_EXTS:
-                    key = await loop.run_in_executor(None, self._upload_image_sync, file_path)
+                
+                # Start progress tracking
+                progress_tracker = FileUploadProgress(self, msg.chat_id, file_path)
+                await progress_tracker.start()
+                
+                try:
+                    if ext in self._IMAGE_EXTS:
+                        key = await loop.run_in_executor(None, self._upload_image_sync, file_path)
+                        if key:
+                            await loop.run_in_executor(
+                                None, _do_send,
+                                "image", json.dumps({"image_key": key}, ensure_ascii=False),
+                            )
+                    else:
+                        # For non-image files, use progress callback
+                        key = await loop.run_in_executor(None, self._upload_file_sync, file_path, progress_tracker.update_bytes_read)
+                        if key:
+                            # Use msg_type "audio" for audio, "video" for video, "file" for documents.
+                            # Feishu requires these specific msg_types for inline playback.
+                            # Note: "media" is only valid as a tag inside "post" messages, not as a standalone msg_type.
+                            if ext in self._AUDIO_EXTS:
+                                media_type = "audio"
+                            elif ext in self._VIDEO_EXTS:
+                                media_type = "video"
+                            else:
+                                media_type = "file"
+                            await loop.run_in_executor(
+                                None, _do_send,
+                                media_type, json.dumps({"file_key": key}, ensure_ascii=False),
+                            )
+                finally:
+                    # Stop progress tracking
+                    await progress_tracker.stop()
+                    
+                    # Send completion message
                     if key:
-                        await loop.run_in_executor(
-                            None, _do_send,
-                            "image", json.dumps({"image_key": key}, ensure_ascii=False),
-                        )
-                else:
-                    key = await loop.run_in_executor(None, self._upload_file_sync, file_path)
-                    if key:
-                        # Use msg_type "audio" for audio, "video" for video, "file" for documents.
-                        # Feishu requires these specific msg_types for inline playback.
-                        # Note: "media" is only valid as a tag inside "post" messages, not as a standalone msg_type.
-                        if ext in self._AUDIO_EXTS:
-                            media_type = "audio"
-                        elif ext in self._VIDEO_EXTS:
-                            media_type = "video"
-                        else:
-                            media_type = "file"
-                        await loop.run_in_executor(
-                            None, _do_send,
-                            media_type, json.dumps({"file_key": key}, ensure_ascii=False),
-                        )
+                        await self.send_message(msg.chat_id, "✅ 文件上传完成")
+                    else:
+                        await self.send_message(msg.chat_id, "❌ 文件上传失败")
 
             if msg.content and msg.content.strip():
                 fmt = self._detect_msg_format(msg.content)

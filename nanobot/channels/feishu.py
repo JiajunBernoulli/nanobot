@@ -18,7 +18,7 @@ from pydantic import Field
 
 from nanobot.bus.events import OutboundMessage
 from nanobot.bus.queue import MessageBus
-from nanobot.channels.base import BaseChannel
+from nanobot.channels.base import BaseChannel, StreamBuffer
 from nanobot.config.paths import get_media_dir
 from nanobot.config.schema import Base
 
@@ -260,13 +260,11 @@ _STREAM_ELEMENT_ID = "streaming_md"
 
 
 @dataclass
-class _FeishuStreamBuf:
+class _FeishuStreamBuf(StreamBuffer):
     """Per-chat streaming accumulator using CardKit streaming API."""
 
-    text: str = ""
     card_id: str | None = None
     sequence: int = 0
-    last_edit: float = 0.0
 
 
 class FeishuChannel(BaseChannel):

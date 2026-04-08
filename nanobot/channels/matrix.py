@@ -42,7 +42,7 @@ except ImportError as e:
 
 from nanobot.bus.events import OutboundMessage
 from nanobot.bus.queue import MessageBus
-from nanobot.channels.base import BaseChannel
+from nanobot.channels.base import BaseChannel, StreamBuffer
 from nanobot.config.paths import get_data_dir, get_media_dir
 from nanobot.config.schema import Base
 from nanobot.utils.helpers import safe_filename
@@ -101,21 +101,15 @@ MATRIX_HTML_CLEANER = nh3.Cleaner(
 )
 
 @dataclass
-class _StreamBuf:
+class _StreamBuf(StreamBuffer):
     """
     Represents a buffer for managing LLM response stream data.
 
-    :ivar text: Stores the text content of the buffer.
-    :type text: str
     :ivar event_id: Identifier for the associated event. None indicates no 
         specific event association.
     :type event_id: str | None
-    :ivar last_edit: Timestamp of the most recent edit to the buffer.
-    :type last_edit: float
     """
-    text: str = ""
     event_id: str | None = None
-    last_edit: float = 0.0
 
 def _render_markdown_html(text: str) -> str | None:
     """Render markdown to sanitized HTML; returns None for plain text."""

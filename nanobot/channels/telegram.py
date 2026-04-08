@@ -18,7 +18,7 @@ from telegram.request import HTTPXRequest
 
 from nanobot.bus.events import OutboundMessage
 from nanobot.bus.queue import MessageBus
-from nanobot.channels.base import BaseChannel
+from nanobot.channels.base import BaseChannel, StreamBuffer
 from nanobot.command.builtin import build_help_text
 from nanobot.config.paths import get_media_dir
 from nanobot.config.schema import Base
@@ -169,11 +169,10 @@ _SEND_RETRY_BASE_DELAY = 0.5  # seconds, doubled each retry
 
 
 @dataclass
-class _StreamBuf:
+class _StreamBuf(StreamBuffer):
     """Per-chat streaming accumulator for progressive message editing."""
-    text: str = ""
+
     message_id: int | None = None
-    last_edit: float = 0.0
     stream_id: str | None = None
 
 

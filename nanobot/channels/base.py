@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,17 @@ from loguru import logger
 
 from nanobot.bus.events import InboundMessage, OutboundMessage
 from nanobot.bus.queue import MessageBus
+
+
+@dataclass
+class StreamBuffer:
+    """
+    Generic streaming buffer for managing progressive message updates.
+    
+    Different channels may extend this class to add channel-specific fields.
+    """
+    text: str = ""
+    last_edit: float = 0.0
 
 
 class BaseChannel(ABC):

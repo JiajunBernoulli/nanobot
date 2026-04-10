@@ -225,10 +225,10 @@ class TestRevert:
 class TestMemoryStoreGitProperty:
     def test_git_property_exposes_gitstore(self, tmp_path):
         from nanobot.agent.memory import MemoryStore
-        store = MemoryStore(tmp_path)
+        store = MemoryStore(tmp_path, version_backend="git")
         assert isinstance(store.git, GitStore)
 
     def test_git_property_is_same_object(self, tmp_path):
         from nanobot.agent.memory import MemoryStore
-        store = MemoryStore(tmp_path)
-        assert store.git is store._git
+        store = MemoryStore(tmp_path, version_backend="git")
+        assert store.git is store._version_store

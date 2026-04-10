@@ -18,6 +18,7 @@ from nanobot.utils.helpers import ensure_dir, estimate_message_tokens, estimate_
 from nanobot.agent.runner import AgentRunSpec, AgentRunner
 from nanobot.agent.tools.registry import ToolRegistry
 from nanobot.utils.gitstore import GitStore
+from nanobot.utils.sqlitestore import SQLiteStore
 
 if TYPE_CHECKING:
     from nanobot.providers.base import LLMProvider
@@ -38,7 +39,12 @@ class MemoryStore:
         r"^\[\d{4}-\d{2}-\d{2}[^\]]*\]\s+[A-Z][A-Z0-9_]*(?:\s+\[tools:\s*[^\]]+\])?:"
     )
 
-    def __init__(self, workspace: Path, max_history_entries: int = _DEFAULT_MAX_HISTORY):
+    def __init__(
+        self,
+        workspace: Path,
+        max_history_entries: int = _DEFAULT_MAX_HISTORY,
+        version_backend: str = "sqlite",
+    ):
         self.workspace = workspace
         self.max_history_entries = max_history_entries
         self.memory_dir = ensure_dir(workspace / "memory")
@@ -49,14 +55,17 @@ class MemoryStore:
         self.user_file = workspace / "USER.md"
         self._cursor_file = self.memory_dir / ".cursor"
         self._dream_cursor_file = self.memory_dir / ".dream_cursor"
-        self._git = GitStore(workspace, tracked_files=[
-            "SOUL.md", "USER.md", "memory/MEMORY.md",
-        ])
+        tracked_files = ["SOUL.md", "USER.md", "memory/MEMORY.md"]
+        if version_backend == "git":
+            self._version_store = GitStore(workspace, tracked_files=tracked_files)
+        else:
+            self._version_store = SQLiteStore(workspace, tracked_files=tracked_files)
         self._maybe_migrate_legacy_history()
 
     @property
-    def git(self) -> GitStore:
-        return self._git
+    def git(self) -> GitStore | SQLiteStore:
+        """Version store for dream history (GitStore or SQLiteStore)."""
+        return self._version_store
 
     # -- generic helpers -----------------------------------------------------
 

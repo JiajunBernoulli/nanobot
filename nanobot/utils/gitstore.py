@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,15 +26,54 @@ class CommitInfo:
 
 
 class GitStore:
-    """Git-backed version control for memory files."""
+    """Git-backed version control for memory files.
+    
+    Uses a custom git directory name to avoid conflicts with user's main git repository.
+    The git directory is stored in the memory subdirectory (e.g., memory/.dream_git).
+    """
 
-    def __init__(self, workspace: Path, tracked_files: list[str]):
+    DEFAULT_GIT_DIR_NAME = ".dream_git"
+
+    def __init__(self, workspace: Path, tracked_files: list[str], git_dir_name: str | None = None):
         self._workspace = workspace
         self._tracked_files = tracked_files
+        self._git_dir_name = git_dir_name or self.DEFAULT_GIT_DIR_NAME
+        # Git directory is now inside memory/ subdirectory to avoid conflicts
+        self._memory_dir = workspace / "memory"
+        self._git_dir = self._memory_dir / self._git_dir_name
+        self._migrate_old_git()
+
+    def _migrate_old_git(self) -> None:
+        """Migrate from old .git location to new memory/.dream_git location."""
+        old_git_dir = self._workspace / ".git"
+        
+        # If old .git exists as directory and new location doesn't, migrate
+        if old_git_dir.is_dir() and not self._git_dir.is_dir():
+            try:
+                # Ensure memory directory exists
+                self._memory_dir.mkdir(parents=True, exist_ok=True)
+                
+                # Move .git to new location
+                shutil.move(str(old_git_dir), str(self._git_dir))
+                
+                # Create .git file pointing to new location
+                git_file = self._workspace / ".git"
+                git_file.write_text(f"gitdir: {self._git_dir}\n", encoding="utf-8")
+                
+                logger.info(
+                    "Migrated git store from {} to {}",
+                    old_git_dir,
+                    self._git_dir,
+                )
+            except Exception as e:
+                logger.warning(
+                    "Failed to migrate old git directory: {}. Will initialize fresh.",
+                    e,
+                )
 
     def is_initialized(self) -> bool:
         """Check if the git repo has been initialized."""
-        return (self._workspace / ".git").is_dir()
+        return self._git_dir.is_dir()
 
     # -- init ------------------------------------------------------------------
 
@@ -47,9 +87,20 @@ class GitStore:
             return False
 
         try:
-            from dulwich import porcelain
+            from dulwich.repo import Repo
 
-            porcelain.init(str(self._workspace))
+            # Initialize with custom git directory inside memory/
+            self._memory_dir.mkdir(parents=True, exist_ok=True)
+            Repo.init(str(self._workspace))
+            
+            # Move the .git directory to our custom location
+            old_git = self._workspace / ".git"
+            if old_git.is_dir() and not self._git_dir.is_dir():
+                shutil.move(str(old_git), str(self._git_dir))
+                
+                # Create .git file pointing to new location (use relative path)
+                git_file = self._workspace / ".git"
+                git_file.write_text(f"gitdir: {self._git_dir.relative_to(self._workspace)}\n", encoding="utf-8")
 
             # Write .gitignore
             gitignore = self._workspace / ".gitignore"
@@ -63,18 +114,20 @@ class GitStore:
                 if not p.exists():
                     p.write_text("", encoding="utf-8")
 
-            # Initial commit
-            porcelain.add(str(self._workspace), paths=[".gitignore"] + self._tracked_files)
+            # Initial commit - configure repo to use custom git dir
+            repo_path = str(self._workspace)
+            from dulwich import porcelain
+            porcelain.add(repo_path, paths=[".gitignore"] + self._tracked_files)
             porcelain.commit(
-                str(self._workspace),
+                repo_path,
                 message=b"init: nanobot memory store",
                 author=b"nanobot <nanobot@dream>",
                 committer=b"nanobot <nanobot@dream>",
             )
-            logger.info("Git store initialized at {}", self._workspace)
+            logger.info("Git store initialized at {} with git dir {}", self._workspace, self._git_dir)
             return True
-        except Exception:
-            logger.warning("Git store init failed for {}", self._workspace)
+        except Exception as e:
+            logger.warning("Git store init failed for {}: {}", self._workspace, e)
             return False
 
     # -- daily operations ------------------------------------------------------

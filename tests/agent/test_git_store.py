@@ -25,11 +25,21 @@ def git_ready(git):
 class TestInit:
     def test_not_initialized_by_default(self, git, tmp_path):
         assert not git.is_initialized()
-        assert not (tmp_path / ".git").is_dir()
+        # .git should not exist or should not be a valid gitdir pointer
+        git_file = tmp_path / ".git"
+        assert not git_file.exists() or not git_file.is_file() or "gitdir" not in git_file.read_text(errors="ignore")
 
     def test_init_creates_git_dir(self, git, tmp_path):
         assert git.init()
-        assert (tmp_path / ".git").is_dir()
+        # In new scheme, .git is a file pointing to memory/.dream_git
+        git_file = tmp_path / ".git"
+        assert git_file.is_file(), ".git should be a file (gitdir pointer)"
+        assert "gitdir: memory/.dream_git" in git_file.read_text()
+        
+        # The actual git directory should be at memory/.dream_git
+        actual_git_dir = tmp_path / "memory" / ".dream_git"
+        assert actual_git_dir.is_dir()
+        assert (actual_git_dir / "config").exists()
 
     def test_init_idempotent(self, git_ready):
         assert not git_ready.init()

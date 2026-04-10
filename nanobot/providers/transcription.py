@@ -25,7 +25,10 @@ class OpenAITranscriptionProvider:
         try:
             async with httpx.AsyncClient() as client:
                 with open(path, "rb") as f:
-                    files = {"file": (path.name, f), "model": (None, "whisper-1")}
+                    filename = path.name
+                    if filename.endswith(".opus"):
+                        filename = filename[:-5] + ".ogg"
+                    files = {"file": (filename, f), "model": (None, "whisper-1")}
                     headers = {"Authorization": f"Bearer {self.api_key}"}
                     response = await client.post(
                         self.api_url, headers=headers, files=files, timeout=60.0,
@@ -70,8 +73,11 @@ class GroqTranscriptionProvider:
         try:
             async with httpx.AsyncClient() as client:
                 with open(path, "rb") as f:
+                    filename = path.name
+                    if filename.endswith(".opus"):
+                        filename = filename[:-5] + ".ogg"
                     files = {
-                        "file": (path.name, f),
+                        "file": (filename, f),
                         "model": (None, "whisper-large-v3"),
                     }
                     headers = {

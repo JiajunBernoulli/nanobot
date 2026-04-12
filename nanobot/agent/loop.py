@@ -246,6 +246,7 @@ class AgentLoop:
         self._concurrency_gate: asyncio.Semaphore | None = (
             asyncio.Semaphore(_max) if _max > 0 else None
         )
+        self._task_timeout = int(os.environ.get("NANOBOT_TASK_TIMEOUT_MINUTES", "60")) * 60
         self.consolidator = Consolidator(
             store=self.context.memory,
             provider=provider,
@@ -516,16 +517,36 @@ class AgentLoop:
                             ))
                             stream_segment += 1
 
-                    response = await self._process_message(
-                        msg, on_stream=on_stream, on_stream_end=on_stream_end,
-                        pending_queue=pending,
-                    )
-                    if response is not None:
-                        await self.bus.publish_outbound(response)
-                    elif msg.channel == "cli":
+                    try:
+                        if self._task_timeout > 0:
+                            response = await asyncio.wait_for(
+                                self._process_message(
+                                    msg, on_stream=on_stream, on_stream_end=on_stream_end,
+                                    pending_queue=pending,
+                                ),
+                                timeout=self._task_timeout,
+                            )
+                        else:
+                            response = await self._process_message(
+                                msg, on_stream=on_stream, on_stream_end=on_stream_end,
+                                pending_queue=pending,
+                            )
+                        if response is not None:
+                            await self.bus.publish_outbound(response)
+                        elif msg.channel == "cli":
+                            await self.bus.publish_outbound(OutboundMessage(
+                                channel=msg.channel, chat_id=msg.chat_id,
+                                content="", metadata=msg.metadata or {},
+                            ))
+                    except asyncio.TimeoutError:
+                        logger.warning(
+                            "Task timed out for session {} after {} minutes",
+                            session_key,
+                            self._task_timeout,
+                        )
                         await self.bus.publish_outbound(OutboundMessage(
                             channel=msg.channel, chat_id=msg.chat_id,
-                            content="", metadata=msg.metadata or {},
+                            content=f"Sorry, the task timed out after {self._task_timeout // 60} minutes. Please try again or break down your request into smaller steps.",
                         ))
                 except asyncio.CancelledError:
                     logger.info("Task cancelled for session {}", session_key)

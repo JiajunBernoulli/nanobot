@@ -568,6 +568,7 @@ class Dream:
         max_batch_size: int = 20,
         max_iterations: int = 10,
         max_tool_result_chars: int = 16_000,
+        hook_script: str | None = None,
     ):
         self.store = store
         self.provider = provider
@@ -575,6 +576,7 @@ class Dream:
         self.max_batch_size = max_batch_size
         self.max_iterations = max_iterations
         self.max_tool_result_chars = max_tool_result_chars
+        self.hook_script = hook_script
         self._runner = AgentRunner(provider)
         self._tools = self._build_tools()
 
@@ -763,4 +765,53 @@ class Dream:
             if sha:
                 logger.info("Dream commit: {}", sha)
 
+        # Invoke hook script if configured or default exists
+        self._invoke_hook(changelog, batch, result)
+
         return True
+
+    def _invoke_hook(
+        self,
+        changelog: list[str],
+        batch: list[dict[str, Any]],
+        result: Any | None,
+    ) -> None:
+        """Invoke user-defined hook script after Dream completion."""
+        import importlib.util
+        from pathlib import Path
+
+        # Determine script path: use configured path or default location
+        if self.hook_script:
+            script_path = Path(self.hook_script).expanduser()
+        else:
+            workspace_root = Path.home() / ".nanobot" / "workspace"
+            script_path = workspace_root / "hooks" / "hook_after_dreaming.py"
+
+        if not script_path.exists():
+            logger.debug("Hook script not found: {}", script_path)
+            return
+
+        try:
+            spec = importlib.util.spec_from_file_location("hook_module", script_path)
+            if spec is None or spec.loader is None:
+                logger.warning("Failed to load hook script: {}", script_path)
+                return
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+
+            # Build context dictionary
+            ctx = {
+                "changelog": changelog,
+                "cursor": batch[-1]["cursor"] if batch else None,
+                "batch": batch,
+                "result": result,
+            }
+
+            # Call run function if it exists
+            if hasattr(module, "run") and callable(module.run):
+                module.run(ctx)
+                logger.info("Hook script executed successfully: {}", script_path)
+            else:
+                logger.warning("Hook script missing 'run' function: {}", script_path)
+        except Exception:
+            logger.exception("Hook script execution failed: {}", script_path)

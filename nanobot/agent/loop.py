@@ -242,7 +242,7 @@ class AgentLoop:
             max_batch_size=dream_config.max_batch_size,
             max_iterations=dream_config.max_iterations,
             max_tool_result_chars=defaults.max_tool_result_chars,
-            hook_script=dream_config.hook_script,
+            after_hook_script=dream_config.after_hook_script,
         )
         self._register_default_tools()
         self.commands = CommandRouter()

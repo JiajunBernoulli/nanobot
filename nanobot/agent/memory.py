@@ -568,7 +568,7 @@ class Dream:
         max_batch_size: int = 20,
         max_iterations: int = 10,
         max_tool_result_chars: int = 16_000,
-        hook_script: str | None = None,
+        after_hook_script: str | None = None,
     ):
         self.store = store
         self.provider = provider
@@ -576,7 +576,7 @@ class Dream:
         self.max_batch_size = max_batch_size
         self.max_iterations = max_iterations
         self.max_tool_result_chars = max_tool_result_chars
-        self.hook_script = hook_script
+        self.after_hook_script = after_hook_script
         self._runner = AgentRunner(provider)
         self._tools = self._build_tools()
 
@@ -765,13 +765,13 @@ class Dream:
             if sha:
                 logger.info("Dream commit: {}", sha)
 
-        # Invoke hook script if configured
-        if self.hook_script:
-            await self._invoke_hook_async(changelog, batch, result)
+        # Invoke after hook script if configured
+        if self.after_hook_script:
+            await self._invoke_after_hook_async(changelog, batch, result)
 
         return True
 
-    async def _invoke_hook_async(
+    async def _invoke_after_hook_async(
         self,
         changelog: list[str],
         batch: list[dict[str, Any]],
@@ -782,7 +782,7 @@ class Dream:
         import importlib.util
         from pathlib import Path
 
-        script_path = Path(self.hook_script).expanduser()
+        script_path = Path(self.after_hook_script).expanduser()
         if not script_path.exists():
             logger.debug("Hook script not found: {}", script_path)
             return

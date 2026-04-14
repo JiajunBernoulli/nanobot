@@ -1,24 +1,10 @@
-.worktrees/
-.assets
-.docs
-.env
+```gitignore
+# Python cache files
+__pycache__/
 *.pyc
-dist/
-build/
-*.egg-info/
-*.egg
-*.pycs
 *.pyo
 *.pyd
-*.pyw
-*.pyz
-*.pywz
-*.pyzz
-.venv/
-venv/
-__pycache__/
-poetry.lock
-.pytest_cache/
-botpy.log
-nano.*.save
 
+# Original rules preserved
+*.log
+```

@@ -7,6 +7,7 @@ from typing import Any
 
 from loguru import logger
 
+from nanobot.bus.events import InboundMessage, OutboundMessage
 from nanobot.bus.queue import MessageBus
 from nanobot.channels.base import BaseChannel
 from nanobot.config.schema import Config
@@ -129,10 +130,7 @@ class ChannelManager:
 
                 channel = self.channels.get(msg.channel)
                 if channel:
-                    try:
-                        await channel.send(msg)
-                    except Exception as e:
-                        logger.error("Error sending to {}: {}", msg.channel, e)
+                    await channel.send(msg)
                 else:
                     logger.warning("Unknown channel: {}", msg.channel)
 
@@ -140,6 +138,18 @@ class ChannelManager:
                 continue
             except asyncio.CancelledError:
                 break
+            except Exception as e:
+                # Auth errors bubble up here - send error message to all channels
+                logger.exception("Critical error in outbound dispatcher: {}", e)
+                for channel_name, channel in self.channels.items():
+                    try:
+                        await channel.send(OutboundMessage(
+                            channel=channel_name,
+                            chat_id="system",
+                            content=f"⚠️ Error: {str(e)}",
+                        ))
+                    except Exception:
+                        pass
 
     def get_channel(self, name: str) -> BaseChannel | None:
         """Get a channel by name."""

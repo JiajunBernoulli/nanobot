@@ -155,6 +155,9 @@ class ChannelManager:
 
         self._notify_restart_done_if_needed()
 
+        # Send gateway lifecycle notification after channels are initialized
+        await self._send_gateway_lifecycle_notification("on_start")
+        
         # Wait for all to complete (they should run forever)
         await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -178,6 +181,9 @@ class ChannelManager:
     async def stop_all(self) -> None:
         """Stop all channels and the dispatcher."""
         logger.info("Stopping all channels...")
+
+        # Send gateway lifecycle notification before stopping
+        await self._send_gateway_lifecycle_notification("on_stop")
 
         # Stop dispatcher
         if self._dispatch_task:
@@ -346,3 +352,41 @@ class ChannelManager:
     def enabled_channels(self) -> list[str]:
         """Get list of enabled channel names."""
         return list(self.channels.keys())
+
+    async def _send_gateway_lifecycle_notification(self, event: str) -> None:
+        """Send gateway lifecycle notification (on_start / on_stop) if configured."""
+        from nanobot.bus.events import OutboundMessage
+
+        # Safety check: ensure config has gateway attribute
+        if not hasattr(self.config, "gateway"):
+            return
+
+        cfg = getattr(self.config.gateway, event, None)
+        if not cfg:
+            return
+
+        # Pick the first non-internal enabled channel as the notification target
+        target_channel = None
+        target_chat_id = None
+        for name, channel in self.channels.items():
+            if name in {"cli", "system"}:
+                continue
+            target_channel = channel
+            target_chat_id = getattr(channel.config, "notify_chat_id", None) or channel.name
+            break
+
+        if not target_channel:
+            return
+
+        try:
+            # Wait for channels to initialize their clients before sending lifecycle notification
+            await asyncio.sleep(3)
+            msg = OutboundMessage(
+                channel=target_channel.name,
+                chat_id=target_chat_id,
+                content=cfg,
+                metadata={"_lifecycle_notification": True},
+            )
+            await self._send_with_retry(target_channel, msg)
+        except Exception as e:
+            logger.warning("Gateway {} notification failed: {}", event, e)

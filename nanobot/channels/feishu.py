@@ -257,6 +257,7 @@ class FeishuConfig(Base):
     reply_to_message: bool = False  # If True, bot replies quote the user's original message
     streaming: bool = True
     domain: Literal["feishu", "lark"] = "feishu"  # Set to "lark" for international Lark
+    notify_chat_id: str | None = None  # Target for lifecycle notifications (e.g., on_start)
 
 
 _STREAM_ELEMENT_ID = "streaming_md"

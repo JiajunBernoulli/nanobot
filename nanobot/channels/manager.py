@@ -157,7 +157,6 @@ class ChannelManager:
 
         # Send gateway lifecycle notification after channels are initialized
         await self._send_gateway_lifecycle_notification("on_start")
-        
         # Wait for all to complete (they should run forever)
         await asyncio.gather(*tasks, return_exceptions=True)
 

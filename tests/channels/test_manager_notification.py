@@ -135,7 +135,9 @@ class TestGatewayLifecycleNotification:
         type(mock_notification_cfg).chat_id_list = PropertyMock(return_value=["oc_test123"])
         type(mock_notification_cfg).on_start_message = PropertyMock(return_value="Gateway started")
 
-        mock_channel.config = mock_notification_cfg
+        # Set up channel config with nested notification
+        mock_channel.config = MagicMock()
+        mock_channel.config.notification = mock_notification_cfg
 
         # Mock send to raise an exception
         mock_channel.send = AsyncMock(side_effect=Exception("Network error"))

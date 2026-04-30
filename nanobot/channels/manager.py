@@ -381,19 +381,23 @@ class ChannelManager:
                 continue
 
             target_channel = channel
-            # Use first chat_id from list, or fallback to channel name
-            target_chat_id = target_chat_ids[0] if target_chat_ids else channel.name
             
             try:
                 # Wait for channels to initialize their clients before sending lifecycle notification
                 await asyncio.sleep(3)
-                msg = OutboundMessage(
-                    channel=target_channel.name,
-                    chat_id=target_chat_id,
-                    content=channel_msg,
-                    metadata={"_lifecycle_notification": True},
-                )
-                await self._send_with_retry(target_channel, msg)
+                
+                # Send to all configured chat_ids, or fallback to channel name if none specified
+                chat_ids_to_send = target_chat_ids if target_chat_ids else [channel.name]
+                
+                for target_chat_id in chat_ids_to_send:
+                    msg = OutboundMessage(
+                        channel=target_channel.name,
+                        chat_id=target_chat_id,
+                        content=channel_msg,
+                        metadata={"_lifecycle_notification": True},
+                    )
+                    await self._send_with_retry(target_channel, msg)
+                
                 # Only send to the first channel with a configured message
                 break
             except Exception as e:
